@@ -1,0 +1,19 @@
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/captures/
+.externalNativeBuild
+/.cxx/
+.gradle/
+**/build/
+
+# Android Studio Navigation Editor temp files
+.navigation/
+
+# Kotlin
+*.class
+
+# Generated files
+*/build/
