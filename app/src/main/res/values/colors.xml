@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#6200EE</color>
+    <color name="purple_700">#3700B3</color>
+    <color name="teal_200">#03DAC5</color>
+    <color name="teal_700">#018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <!-- Cyberpunk / Neon Palette -->
+    <color name="cyber_background">#0D0D12</color> <!-- Deep dark blue/black -->
+    <color name="cyber_surface">#1A1A24</color>    <!-- Slightly lighter for cards/containers -->
+    
+    <color name="neon_cyan">#00F3FF</color>
+    <color name="neon_cyan_dim">#3300F3FF</color> <!-- Transparent version for fills -->
+    
+    <color name="neon_magenta">#FF00FF</color>
+    <color name="neon_magenta_dim">#33FF00FF</color>
+    
+    <color name="neon_green">#00FF9D</color>
+    <color name="neon_orange">#FF9100</color>
+    <color name="neon_red">#FF1744</color>
+</resources>

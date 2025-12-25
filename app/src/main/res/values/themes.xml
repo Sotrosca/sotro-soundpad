@@ -1,9 +1,16 @@
 <resources xmlns:tools="http://schemas.android.com/tools">
     <!-- Base application theme. -->
-    <style name="Theme.SotroSoundPad" parent="Theme.AppCompat.Light.DarkActionBar">
+    <style name="Theme.SotroSoundPad" parent="Theme.AppCompat">
         <!-- Primary brand color. -->
-        <item name="colorPrimary">#6200EE</item>
-        <item name="colorPrimaryDark">#3700B3</item>
-        <item name="colorAccent">#03DAC5</item>
+        <item name="colorPrimary">@color/cyber_surface</item>
+        <item name="colorPrimaryDark">@color/cyber_background</item>
+        <item name="colorAccent">@color/neon_cyan</item>
+        
+        <!-- Customize your theme here. -->
+        <item name="android:windowBackground">@color/cyber_background</item>
+        <item name="android:textColor">@color/white</item>
+        
+        <!-- ActionBar text color -->
+        <item name="titleTextColor">@color/neon_cyan</item>
     </style>
 </resources>
