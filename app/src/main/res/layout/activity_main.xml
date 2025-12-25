@@ -3,26 +3,44 @@
     android:orientation="vertical"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:padding="16dp">
+    android:padding="16dp"
+    android:background="#FFFFFF">
 
-    <Button
-        android:id="@+id/btn_import"
+    <TextView
+        android:id="@+id/tv_trash"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Import sounds" />
+        android:layout_height="80dp"
+        android:text="🗑️ Drag here to delete"
+        android:gravity="center"
+        android:background="@drawable/trash_background_normal"
+        android:textColor="#757575"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp"
+        android:visibility="visible" />
 
     <ScrollView
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:paddingTop="8dp">
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
 
-        <LinearLayout
+        <GridLayout
             android:id="@+id/sound_buttons_container"
-            android:orientation="vertical"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content" />
+            android:layout_height="wrap_content"
+            android:columnCount="3"
+            android:columnOrderPreserved="false"
+            />
 
     </ScrollView>
+
+    <Button
+        android:id="@+id/btn_import"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Import sounds"
+        android:textColor="#000000" />
 
 </LinearLayout>
