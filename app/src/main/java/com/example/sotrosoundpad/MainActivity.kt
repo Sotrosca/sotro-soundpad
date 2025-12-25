@@ -1,8 +1,10 @@
 package com.example.sotrosoundpad
 
 import android.content.ClipData
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.media.MediaPlayer
+import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Bundle
 import android.provider.OpenableColumns
@@ -13,11 +15,14 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.EditText
 import android.widget.GridLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import java.io.File
 import java.util.*
 
@@ -25,8 +30,24 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var container: GridLayout
     private var mediaPlayer: MediaPlayer? = null
+    private var mediaRecorder: MediaRecorder? = null
+    private var isRecording = false
+    private var currentRecordingFile: File? = null
     private var isEditMode = false
     private var editMenuItem: MenuItem? = null
+    
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var visualizerRunnable: Runnable? = null
+
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted: Boolean ->
+        if (isGranted) {
+            showRecordDialog()
+        } else {
+            Toast.makeText(this, "Permission denied", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     private val pickSounds = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris != null && uris.isNotEmpty()) {
@@ -48,7 +69,183 @@ class MainActivity : AppCompatActivity() {
             pickSounds.launch(arrayOf("audio/*"))
         }
 
+        findViewById<Button>(R.id.btn_record).setOnClickListener {
+            checkPermissionAndRecord()
+        }
+
         refreshButtons()
+    }
+
+    private fun checkPermissionAndRecord() {
+        when {
+            ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.RECORD_AUDIO
+            ) == PackageManager.PERMISSION_GRANTED -> {
+                showRecordDialog()
+            }
+            else -> {
+                requestPermissionLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
+            }
+        }
+    }
+
+    private fun showRecordDialog() {
+        val builder = android.app.AlertDialog.Builder(this)
+        builder.setTitle("Record Audio")
+
+        val layout = LinearLayout(this)
+        layout.orientation = LinearLayout.VERTICAL
+        layout.setPadding(50, 40, 50, 10)
+        layout.gravity = android.view.Gravity.CENTER_HORIZONTAL
+
+        val input = EditText(this)
+        input.hint = "Recording Name"
+        // input.setText("Recording_${System.currentTimeMillis() / 1000}") // Removed default name
+        layout.addView(input)
+
+        // Chronometer for timer
+        val timer = android.widget.Chronometer(this)
+        timer.textSize = 30f
+        timer.gravity = android.view.Gravity.CENTER
+        timer.visibility = View.GONE
+        layout.addView(timer)
+
+        // Visualizer
+        val visualizer = View(this)
+        val size = (60 * resources.displayMetrics.density).toInt()
+        val params = LinearLayout.LayoutParams(size, size)
+        params.gravity = android.view.Gravity.CENTER
+        params.topMargin = 30
+        visualizer.layoutParams = params
+        visualizer.setBackgroundResource(R.drawable.recording_visualizer)
+        visualizer.visibility = View.INVISIBLE // Hidden initially
+        layout.addView(visualizer)
+
+        val statusText = TextView(this)
+        statusText.text = "Ready to record"
+        statusText.setPadding(0, 20, 0, 20)
+        statusText.gravity = android.view.Gravity.CENTER
+        layout.addView(statusText)
+
+        val recordBtn = Button(this)
+        recordBtn.text = "Start Recording"
+        recordBtn.setBackgroundColor(Color.RED)
+        recordBtn.setTextColor(Color.WHITE)
+        layout.addView(recordBtn)
+
+        builder.setView(layout)
+        builder.setNegativeButton("Cancel") { dialog, _ ->
+            if (isRecording) {
+                stopRecording()
+                currentRecordingFile?.delete()
+            }
+            dialog.dismiss()
+        }
+
+        val dialog = builder.create()
+        dialog.show()
+
+        recordBtn.setOnClickListener {
+            if (!isRecording) {
+                val name = input.text.toString().trim().uppercase()
+                if (name.isEmpty()) {
+                    Toast.makeText(this, "Please enter a name", Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+                
+                // Sanitize name
+                val sanitized = name.replace(",", "").replace("|", "")
+                val file = File(getExternalFilesDir("sounds"), "$sanitized.mp3")
+                
+                if (startRecording(file)) {
+                    isRecording = true
+                    currentRecordingFile = file
+                    
+                    // UI Updates for Recording
+                    recordBtn.text = "Stop Recording"
+                    statusText.text = "🔴 RECORDING"
+                    statusText.setTextColor(Color.RED)
+                    statusText.setTypeface(null, android.graphics.Typeface.BOLD)
+                    
+                    input.isEnabled = false
+                    
+                    // Start Timer
+                    timer.base = android.os.SystemClock.elapsedRealtime()
+                    timer.visibility = View.VISIBLE
+                    timer.start()
+                    
+                    // Start Visualizer Animation
+                    visualizer.visibility = View.VISIBLE
+                    visualizerRunnable = object : Runnable {
+                        override fun run() {
+                            if (isRecording && mediaRecorder != null) {
+                                val maxAmplitude = mediaRecorder?.maxAmplitude ?: 0
+                                // Normalize 0-32767 to 1.0-2.0 scale
+                                val scale = 1.0f + (maxAmplitude / 20000f).coerceAtMost(1.0f)
+                                visualizer.animate().scaleX(scale).scaleY(scale).setDuration(50).start()
+                                handler.postDelayed(this, 50)
+                            }
+                        }
+                    }
+                    handler.post(visualizerRunnable!!)
+                }
+            } else {
+                stopRecording()
+                timer.stop()
+                
+                // Stop Visualizer
+                if (visualizerRunnable != null) handler.removeCallbacks(visualizerRunnable!!)
+                visualizer.visibility = View.INVISIBLE
+                visualizer.scaleX = 1.0f
+                visualizer.scaleY = 1.0f
+                
+                isRecording = false
+                dialog.dismiss()
+                refreshButtons()
+                Toast.makeText(this, "Recording saved", Toast.LENGTH_SHORT).show()
+            }
+        }
+        
+        dialog.setOnDismissListener {
+            if (isRecording) {
+                stopRecording()
+                currentRecordingFile?.delete()
+                isRecording = false
+            }
+            // Ensure visualizer stops
+            if (visualizerRunnable != null) handler.removeCallbacks(visualizerRunnable!!)
+        }
+    }
+
+    private fun startRecording(file: File): Boolean {
+        return try {
+            mediaRecorder = MediaRecorder().apply {
+                setAudioSource(MediaRecorder.AudioSource.MIC)
+                setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
+                setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
+                setOutputFile(file.absolutePath)
+                prepare()
+                start()
+            }
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            Toast.makeText(this, "Error starting recorder", Toast.LENGTH_SHORT).show()
+            false
+        }
+    }
+
+    private fun stopRecording() {
+        try {
+            mediaRecorder?.apply {
+                stop()
+                release()
+            }
+            mediaRecorder = null
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
@@ -171,8 +368,8 @@ class MainActivity : AppCompatActivity() {
             val row = index / 3
             val col = index % 3
             val params = GridLayout.LayoutParams(
-                GridLayout.spec(row),
-                GridLayout.spec(col)
+                GridLayout.spec(row, GridLayout.FILL),
+                GridLayout.spec(col, GridLayout.FILL)
             )
             
             params.width = buttonWidth
