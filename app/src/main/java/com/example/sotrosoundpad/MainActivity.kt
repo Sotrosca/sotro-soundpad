@@ -8,6 +8,8 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import android.util.TypedValue
 import android.view.DragEvent
+import android.view.Menu
+import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
@@ -23,6 +25,8 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var container: GridLayout
     private var mediaPlayer: MediaPlayer? = null
+    private var isEditMode = false
+    private var editMenuItem: MenuItem? = null
 
     private val pickSounds = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         if (uris != null && uris.isNotEmpty()) {
@@ -36,6 +40,7 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        supportActionBar?.title = "Sotro Soundpad"
 
         container = findViewById(R.id.sound_buttons_container)
 
@@ -43,46 +48,59 @@ class MainActivity : AppCompatActivity() {
             pickSounds.launch(arrayOf("audio/*"))
         }
 
-        setupTrash()
         refreshButtons()
     }
 
-    private fun setupTrash() {
-        val trashView = findViewById<TextView>(R.id.tv_trash)
-        trashView.setOnDragListener { v, event ->
-            when (event.action) {
-                DragEvent.ACTION_DRAG_STARTED -> true
-                DragEvent.ACTION_DRAG_ENTERED -> {
-                    v.setBackgroundResource(R.drawable.trash_background_active)
-                    (v as TextView).text = "DROP TO DELETE"
-                    v.setTextColor(Color.WHITE)
-                    true
-                }
-                DragEvent.ACTION_DRAG_EXITED -> {
-                    v.setBackgroundResource(R.drawable.trash_background_normal)
-                    (v as TextView).text = "🗑️ Drag here to delete"
-                    v.setTextColor(Color.parseColor("#757575"))
-                    true
-                }
-                DragEvent.ACTION_DROP -> {
-                    val file = event.localState as? File
-                    if (file != null) {
-                        showDeleteDialog(file)
-                    }
-                    v.setBackgroundResource(R.drawable.trash_background_normal)
-                    (v as TextView).text = "🗑️ Drag here to delete"
-                    v.setTextColor(Color.parseColor("#757575"))
-                    true
-                }
-                DragEvent.ACTION_DRAG_ENDED -> {
-                    v.setBackgroundResource(R.drawable.trash_background_normal)
-                    (v as TextView).text = "🗑️ Drag here to delete"
-                    v.setTextColor(Color.parseColor("#757575"))
-                    true
-                }
-                else -> false
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.main_menu, menu)
+        editMenuItem = menu?.findItem(R.id.action_edit)
+        updateEditIcon()
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_edit -> {
+                isEditMode = !isEditMode
+                updateEditIcon()
+                refreshButtons()
+                true
             }
+            R.id.action_reset -> {
+                showResetConfirmation()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
         }
+    }
+
+    private fun showResetConfirmation() {
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Reset App")
+            .setMessage("This will delete ALL sounds and data. Are you sure?")
+            .setPositiveButton("Delete All") { _, _ ->
+                resetApp()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun resetApp() {
+        // Clear SharedPreferences
+        val prefs = getSharedPreferences("soundpad_prefs", MODE_PRIVATE)
+        prefs.edit().clear().apply()
+
+        // Clear Internal Storage Files
+        val dir = getExternalFilesDir("sounds")
+        dir?.listFiles()?.forEach { it.delete() }
+
+        // Refresh UI
+        refreshButtons()
+        android.widget.Toast.makeText(this, "App reset successfully", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
+    private fun updateEditIcon() {
+        editMenuItem?.setIcon(if (isEditMode) R.drawable.ic_done else R.drawable.ic_edit)
     }
 
     private fun copyUriToInternal(uri: Uri) {
@@ -140,8 +158,7 @@ class MainActivity : AppCompatActivity() {
         // Parent padding: 16dp * 2 = 32dp
         // Button margins: 8dp * 2 * 3 = 48dp
         // Total non-button space occupied: 80dp
-        // Give an extra 16dp to ensure they fit loosely
-        val totalSpacing = ((32 + 48 + 16) * density).toInt()
+        val totalSpacing = ((32 + 48) * density).toInt()
         val buttonWidth = (screenWidth - totalSpacing) / 3
         val marginPx = (8 * density).toInt()
 
@@ -165,7 +182,38 @@ class MainActivity : AppCompatActivity() {
 
             btn.text = file.nameWithoutExtension
             btn.setTextColor(Color.WHITE)
-            btn.setBackgroundResource(R.drawable.button_background)
+            
+            if (isEditMode) {
+                btn.setBackgroundResource(R.drawable.button_background_edit) // Red rounded for edit mode
+                btn.setOnClickListener { showDeleteDialog(file) }
+                
+                // Enable Drag and Drop for reordering only in Edit Mode
+                btn.setOnLongClickListener { view ->
+                    val data = ClipData.newPlainText("file_path", file.absolutePath)
+                    val shadowBuilder = View.DragShadowBuilder(view)
+                    view.startDragAndDrop(data, shadowBuilder, file, 0)
+                    true
+                }
+                
+                btn.setOnDragListener { v, event ->
+                    when (event.action) {
+                        DragEvent.ACTION_DROP -> {
+                            val sourceFile = event.localState as? File
+                            if (sourceFile != null && sourceFile.absolutePath != file.absolutePath) {
+                                swapFiles(sourceFile, file)
+                            }
+                            true
+                        }
+                        else -> true
+                    }
+                }
+            } else {
+                btn.setBackgroundResource(R.drawable.button_background) // Normal purple
+                btn.setOnClickListener { playFile(file) }
+                btn.setOnLongClickListener(null)
+                btn.setOnDragListener(null)
+            }
+
             btn.setPadding(16, 16, 16, 16)
             btn.gravity = android.view.Gravity.CENTER
             btn.maxLines = 3
@@ -176,30 +224,6 @@ class MainActivity : AppCompatActivity() {
                 btn,
                 10, 14, 1, TypedValue.COMPLEX_UNIT_SP
             )
-
-            btn.setOnClickListener { playFile(file) }
-
-            // Configure Drag and Drop (Start)
-            btn.setOnLongClickListener { view ->
-                val data = ClipData.newPlainText("file_path", file.absolutePath)
-                val shadowBuilder = View.DragShadowBuilder(view)
-                view.startDragAndDrop(data, shadowBuilder, file, 0)
-                true
-            }
-
-            // Configure Drag and Drop (Target - Swap)
-            btn.setOnDragListener { v, event ->
-                when (event.action) {
-                    DragEvent.ACTION_DROP -> {
-                        val sourceFile = event.localState as? File
-                        if (sourceFile != null && sourceFile.absolutePath != file.absolutePath) {
-                            swapFiles(sourceFile, file)
-                        }
-                        true
-                    }
-                    else -> true
-                }
-            }
 
             container.addView(btn)
         }
