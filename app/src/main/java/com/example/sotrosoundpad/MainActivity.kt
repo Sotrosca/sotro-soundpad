@@ -34,7 +34,9 @@ class MainActivity : AppCompatActivity() {
     private var isRecording = false
     private var currentRecordingFile: File? = null
     private var isEditMode = false
+    private var isDeleteMode = false
     private var editMenuItem: MenuItem? = null
+    private var deleteMenuItem: MenuItem? = null
     
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var visualizerRunnable: Runnable? = null
@@ -251,7 +253,8 @@ class MainActivity : AppCompatActivity() {
     override fun onCreateOptionsMenu(menu: Menu?): Boolean {
         menuInflater.inflate(R.menu.main_menu, menu)
         editMenuItem = menu?.findItem(R.id.action_edit)
-        updateEditIcon()
+        deleteMenuItem = menu?.findItem(R.id.action_delete)
+        updateActionBarIcons()
         return true
     }
 
@@ -259,7 +262,15 @@ class MainActivity : AppCompatActivity() {
         return when (item.itemId) {
             R.id.action_edit -> {
                 isEditMode = !isEditMode
-                updateEditIcon()
+                if (isEditMode) isDeleteMode = false // Mutually exclusive
+                updateActionBarIcons()
+                refreshButtons()
+                true
+            }
+            R.id.action_delete -> {
+                isDeleteMode = !isDeleteMode
+                if (isDeleteMode) isEditMode = false // Mutually exclusive
+                updateActionBarIcons()
                 refreshButtons()
                 true
             }
@@ -269,6 +280,15 @@ class MainActivity : AppCompatActivity() {
             }
             else -> super.onOptionsItemSelected(item)
         }
+    }
+
+    private fun updateActionBarIcons() {
+        editMenuItem?.setIcon(if (isEditMode) R.drawable.ic_done else R.drawable.ic_edit)
+        deleteMenuItem?.setIcon(if (isDeleteMode) R.drawable.ic_done else R.drawable.ic_delete)
+        
+        // Optional: Hide/Disable the other icon when one mode is active to avoid confusion
+        editMenuItem?.isVisible = !isDeleteMode
+        deleteMenuItem?.isVisible = !isEditMode
     }
 
     private fun showResetConfirmation() {
@@ -380,35 +400,56 @@ class MainActivity : AppCompatActivity() {
             btn.text = file.nameWithoutExtension
             btn.setTextColor(Color.WHITE)
             
-            if (isEditMode) {
-                btn.setBackgroundResource(R.drawable.button_background_edit) // Red rounded for edit mode
-                btn.setOnClickListener { showDeleteDialog(file) }
-                
-                // Enable Drag and Drop for reordering only in Edit Mode
-                btn.setOnLongClickListener { view ->
-                    val data = ClipData.newPlainText("file_path", file.absolutePath)
-                    val shadowBuilder = View.DragShadowBuilder(view)
-                    view.startDragAndDrop(data, shadowBuilder, file, 0)
-                    true
-                }
-                
-                btn.setOnDragListener { v, event ->
-                    when (event.action) {
-                        DragEvent.ACTION_DROP -> {
-                            val sourceFile = event.localState as? File
-                            if (sourceFile != null && sourceFile.absolutePath != file.absolutePath) {
-                                swapFiles(sourceFile, file)
-                            }
-                            true
-                        }
-                        else -> true
+            // Define Drag and Drop listeners
+            val onLongClickDrag = View.OnLongClickListener { view ->
+                val data = ClipData.newPlainText("file_path", file.absolutePath)
+                val shadowBuilder = View.DragShadowBuilder(view)
+                view.startDragAndDrop(data, shadowBuilder, file, 0)
+                true
+            }
+
+            val onDrag = View.OnDragListener { v, event ->
+                when (event.action) {
+                    DragEvent.ACTION_DRAG_STARTED -> true
+                    DragEvent.ACTION_DRAG_ENTERED -> {
+                        v.alpha = 0.5f
+                        true
                     }
+                    DragEvent.ACTION_DRAG_EXITED -> {
+                        v.alpha = 1.0f
+                        true
+                    }
+                    DragEvent.ACTION_DROP -> {
+                        v.alpha = 1.0f
+                        val sourceFile = event.localState as? File
+                        if (sourceFile != null && sourceFile.absolutePath != file.absolutePath) {
+                            swapFiles(sourceFile, file)
+                        }
+                        true
+                    }
+                    DragEvent.ACTION_DRAG_ENDED -> {
+                        v.alpha = 1.0f
+                        true
+                    }
+                    else -> true
                 }
+            }
+
+            if (isEditMode) {
+                btn.setBackgroundResource(R.drawable.button_background_rename) // Orange for rename/reorder
+                btn.setOnClickListener { showRenameDialog(file) }
+                btn.setOnLongClickListener(onLongClickDrag)
+                btn.setOnDragListener(onDrag)
+            } else if (isDeleteMode) {
+                btn.setBackgroundResource(R.drawable.button_background_edit) // Red for delete mode
+                btn.setOnClickListener { showDeleteDialog(file) }
+                btn.setOnLongClickListener(null)
+                btn.setOnDragListener(null)
             } else {
                 btn.setBackgroundResource(R.drawable.button_background) // Normal purple
                 btn.setOnClickListener { playFile(file) }
-                btn.setOnLongClickListener(null)
-                btn.setOnDragListener(null)
+                btn.setOnLongClickListener(onLongClickDrag)
+                btn.setOnDragListener(onDrag)
             }
 
             btn.setPadding(16, 16, 16, 16)
@@ -447,6 +488,55 @@ class MainActivity : AppCompatActivity() {
         val prefs = getSharedPreferences("soundpad_prefs", MODE_PRIVATE)
         val orderString = prefs.getString("order", "") ?: ""
         return if (orderString.isNotEmpty()) orderString.split("|") else emptyList()
+    }
+
+    private fun showRenameDialog(file: File) {
+        val builder = android.app.AlertDialog.Builder(this)
+        builder.setTitle("Rename Sound")
+
+        val layout = LinearLayout(this)
+        layout.orientation = LinearLayout.VERTICAL
+        layout.setPadding(50, 40, 50, 10)
+
+        val input = EditText(this)
+        input.setText(file.nameWithoutExtension)
+        layout.addView(input)
+
+        builder.setView(layout)
+        builder.setPositiveButton("Rename") { _, _ ->
+            val newName = input.text.toString().trim().uppercase()
+            if (newName.isNotEmpty() && newName != file.nameWithoutExtension) {
+                renameSound(file, newName)
+            } else if (newName.isEmpty()) {
+                Toast.makeText(this, "Name cannot be empty", Toast.LENGTH_SHORT).show()
+            }
+        }
+        builder.setNegativeButton("Cancel", null)
+        builder.show()
+    }
+
+    private fun renameSound(file: File, newName: String) {
+        val sanitized = newName.replace(",", "").replace("|", "")
+        val newFile = File(file.parent, "$sanitized.mp3")
+        
+        if (newFile.exists()) {
+            Toast.makeText(this, "Name already exists", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        if (file.renameTo(newFile)) {
+            // Update order list
+            val currentOrder = loadOrder().toMutableList()
+            val index = currentOrder.indexOf(file.name)
+            if (index != -1) {
+                currentOrder[index] = newFile.name
+                saveOrder(currentOrder)
+            }
+            refreshButtons()
+            Toast.makeText(this, "Renamed successfully", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(this, "Error renaming", Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun showDeleteDialog(file: File) {

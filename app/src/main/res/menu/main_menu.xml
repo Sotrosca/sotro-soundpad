@@ -6,6 +6,11 @@
         android:title="Edit"
         app:showAsAction="always" />
     <item
+        android:id="@+id/action_delete"
+        android:icon="@drawable/ic_delete"
+        android:title="Delete"
+        app:showAsAction="always" />
+    <item
         android:id="@+id/action_reset"
         android:title="Reset App"
         app:showAsAction="never" />

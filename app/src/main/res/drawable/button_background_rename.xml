@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+    android:color="#42FFFFFF">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#FF9800" /> <!-- Orange Color for Rename/Reorder Mode -->
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+</ripple>
